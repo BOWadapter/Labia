@@ -234,6 +234,7 @@ def fuente_diff(diff: str) -> Fuente:
     """
     rutas: list[str] = []
     funciones: list[Funcion] = []
+    añadidas: dict[str, list[str]] = {}
     eliminadas: set[tuple[str, str]] = set()
     ruta_actual: str | None = None
     bloque: list[tuple[int, str]] = []
@@ -255,6 +256,8 @@ def fuente_diff(diff: str) -> Fuente:
                 continue
             if linea.startswith("+"):
                 bloque.append((numero_nuevo, linea[1:]))
+                if ruta_actual is not None:
+                    añadidas.setdefault(ruta_actual, []).append(linea[1:])
                 numero_nuevo += 1
                 quedan_nuevas -= 1
             elif linea.startswith("-"):
@@ -286,4 +289,5 @@ def fuente_diff(diff: str) -> Fuente:
     # Sólo funciones nuevas: una def reescrita (misma función, mismo archivo) no es autoría
     # completa del agente y su docstring/tipos pueden venir del original.
     nuevas = tuple(f for f in funciones if (f.archivo, f.nombre) not in eliminadas)
-    return Fuente(modo="diff", textos={}, rutas=tuple(rutas), funciones=nuevas)
+    textos = {ruta: "\n".join(lineas) for ruta, lineas in añadidas.items()}
+    return Fuente(modo="diff", textos=textos, rutas=tuple(rutas), funciones=nuevas)

@@ -28,8 +28,9 @@ class Funcion:
 class Fuente:
     """Vista normalizada de lo que se verifica: un árbol de archivos o un diff.
 
-    ``textos`` sólo se llena en modo directorio; las reglas que necesitan el
-    archivo completo se declaran no verificables en modo diff.
+    En modo directorio ``textos`` lleva los archivos completos; en modo diff, sólo las
+    líneas añadidas de cada archivo. Las reglas que necesitan el archivo completo se
+    declaran no verificables en modo diff.
     """
 
     modo: str
@@ -86,6 +87,8 @@ class Caso:
     viola: bool
     stdout: str | None = None
     commits: tuple[str, ...] | None = None
+    diff: str | None = None
+    """Si se da, el caso se evalúa en modo diff (``archivos`` se ignora)."""
 
 
 @dataclass(frozen=True)
