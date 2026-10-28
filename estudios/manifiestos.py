@@ -20,7 +20,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Union
 
-from verificador import cargar
+from verificador import Regla, cargar, comprobar_casos
+from verificador.reglas import de_directorio
 
 Esquema = Mapping[str, Union[type, "Esquema"]]
 
@@ -66,16 +67,17 @@ def validar_esquema(datos: Mapping[str, object], esquema: Esquema, donde: str) -
     return errores
 
 
-def _ids_conocidos(directorio_proyecto: Path, datos: Mapping[str, object]) -> set[str]:
-    """Ids de reglas generales más las del directorio de reglas propio, si existe aquí."""
-    extra: Path | None = None
+def _reglas_del_proyecto(directorio_proyecto: Path, datos: Mapping[str, object]) -> list[Regla]:
+    """Reglas propias: el directorio que declara el manifiesto o, si no existe aquí, ``reglas/``."""
+    candidatos: list[Path] = []
     reglas = datos.get("reglas")
     if isinstance(reglas, dict) and isinstance(reglas.get("directorio"), str):
-        candidato = directorio_proyecto / str(reglas["directorio"])
-        extra = candidato if candidato.is_dir() else None
-    if (directorio_proyecto / "reglas").is_dir():
-        extra = directorio_proyecto / "reglas"
-    return {r.id for r in cargar(None, extra)}
+        candidatos.append(directorio_proyecto / str(reglas["directorio"]))
+    candidatos.append(directorio_proyecto / "reglas")
+    for candidato in candidatos:
+        if candidato.is_dir():
+            return de_directorio(candidato)
+    return []
 
 
 def validar_proyecto(directorio: Path) -> list[str]:
@@ -87,7 +89,10 @@ def validar_proyecto(directorio: Path) -> list[str]:
         return [f"{directorio}: falta proyecto.toml"]
     datos = tomllib.loads(manifiesto.read_text(encoding="utf-8"))
     errores.extend(validar_esquema(datos, PROYECTO, str(manifiesto)))
-    conocidos = _ids_conocidos(directorio, datos)
+    propias = _reglas_del_proyecto(directorio, datos)
+    conocidos = {r.id for r in cargar(None)} | {r.id for r in propias}
+    for regla in propias:
+        errores.extend(f"{directorio}: {e}" for e in comprobar_casos(regla))
     reglas = datos.get("reglas", {})
     aplica = reglas.get("aplica", []) if isinstance(reglas, dict) else []
     errores.extend(f"{manifiesto}: regla desconocida en aplica: {r}" for r in aplica if r not in conocidos)
@@ -111,7 +116,13 @@ def validar_proyecto(directorio: Path) -> list[str]:
                 errores.append(f"{donde}: hacen falta al menos dos agentes distintos")
             if not str(tarea.get("enunciado", "")).strip():
                 errores.append(f"{donde}: 'enunciado' está vacío")
-            if tarea.get("asignacion_sin_medir") not in agentes:
+            asignacion = tarea.get("asignacion_sin_medir")
+            if not str(asignacion or "").strip():
+                errores.append(
+                    f"{donde}: 'asignacion_sin_medir' vacío: escribe a qué agente darías hoy esta "
+                    "tarea, sin medir, y commitéalo antes de cualquier corrida"
+                )
+            elif asignacion not in agentes:
                 errores.append(f"{donde}: 'asignacion_sin_medir' debe ser uno de {agentes}")
             repeticiones = tarea.get("repeticiones", 0)
             if isinstance(repeticiones, bool) or not isinstance(repeticiones, int) or repeticiones < 1:

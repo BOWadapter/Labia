@@ -20,7 +20,7 @@ packages = ["verificador", "verificador.reglas", "estudios"]
 
 [tool.mypy]
 strict = true
-files = ["verificador", "estudios", "tests"]
+files = ["verificador", "estudios", "tests", "proyectos"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
