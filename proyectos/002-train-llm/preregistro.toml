@@ -1,0 +1,48 @@
+# Pre-registro de 002-train-llm. Se commitea ANTES de cualquier corrida; después no se toca
+# (python -m estudios.manifiestos lo comprueba contra el historial de git).
+#
+# Protocolo
+# - Repo de partida: el del manifiesto, en su commit fijo, limpio para cada corrida.
+# - none: sin AGENTS.md. always_on: proyectos/002-train-llm/AGENTS.md copiado a la raíz.
+#   CONTRIBUTING.md del repo queda en ambas: lo único que se manipula es AGENTS.md.
+# - El enunciado va idéntico a los dos agentes, en inglés como el repo, y no menciona
+#   convenciones ni tests: hacerlo filtraría el tratamiento.
+# - Una corrida = el `git diff` final del agente, guardado en
+#   corridas/002-train-llm/<id>/<agente>__<estrategia>__<n>.diff
+#
+# asignacion_sin_medir la escribe la persona responsable, antes de correr nada.
+# Mientras esté vacía, el CI queda en rojo a propósito.
+
+[[tarea]]
+id = "t1-label-smoothing"
+enunciado = """Add label smoothing to supervised fine-tuning (SFT). Introduce a `label_smoothing` \
+hyperparameter (a float, default 0.0, valid range 0 <= value < 1) and apply it to the SFT \
+cross-entropy loss. Values outside the valid range must be rejected when the configuration is loaded."""
+agentes = ["claude_code", "codex"]
+estrategias = ["none", "always_on"]
+repeticiones = 3
+asignacion_sin_medir = ""
+reglas_decisivas = ["P2", "R1", "R7"]
+
+[[tarea]]
+id = "t2-repetition-penalty"
+enunciado = """Add a repetition penalty to text generation. Tokens that already appear in the \
+context get their logits penalized as in CTRL: positive logits are divided by \
+`repetition_penalty` and negative logits are multiplied by it. A value of 1.0 disables it. \
+Expose it in `scripts/chat.py` as `--repetition_penalty` (default 1.0)."""
+agentes = ["claude_code", "codex"]
+estrategias = ["none", "always_on"]
+repeticiones = 3
+asignacion_sin_medir = ""
+reglas_decisivas = ["R1", "R7"]
+
+[[tarea]]
+id = "t3-inverse-sqrt"
+enunciado = """Add an `inverse_sqrt` learning-rate schedule: linear warmup to `lr` over \
+`warmup_steps`, then `lr * sqrt(warmup_steps / step)`, never below `min_lr`. It must be \
+selectable everywhere the existing schedules (`cosine`, `wsd`, `linear`) are."""
+agentes = ["claude_code", "codex"]
+estrategias = ["none", "always_on"]
+repeticiones = 3
+asignacion_sin_medir = ""
+reglas_decisivas = ["R1", "R7"]
