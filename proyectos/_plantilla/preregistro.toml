@@ -1,0 +1,11 @@
+# Pre-registro: se commitea ANTES de despachar la tarea a cualquier agente.
+# El resultado se compara contra este commit (§9 del Prompt Maestro), no contra la memoria.
+
+[[tarea]]
+id = "t1"
+enunciado = ""               # la tarea tal como la recibirá cada agente, idéntica para todos
+agentes = ["claude_code", "codex"]
+estrategias = ["none", "always_on"]
+repeticiones = 3
+asignacion_sin_medir = ""    # a qué agente se la darías hoy, sin la tabla
+reglas_decisivas = ["R1", "R2", "R7"]  # las que decidirían el cambio de asignación

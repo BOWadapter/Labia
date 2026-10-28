@@ -1,0 +1,36 @@
+# Las mismas comprobaciones que el CI, antes de cada commit y en cualquier máquina.
+#   python -m pip install pre-commit
+#   pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+        exclude: \.diff$
+      - id: trailing-whitespace
+        exclude: \.diff$
+      - id: check-added-large-files
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: python -m pytest -q
+        language: system
+        pass_filenames: false
+      - id: mypy
+        name: mypy --strict
+        entry: python -m mypy
+        language: system
+        pass_filenames: false
+      - id: verificador-casos
+        name: cada regla separa sus casos
+        entry: python -m verificador casos
+        language: system
+        pass_filenames: false
+      - id: manifiestos
+        name: manifiestos y pre-registro
+        entry: python -m estudios.manifiestos proyectos --corridas corridas
+        language: system
+        pass_filenames: false

@@ -1,0 +1,79 @@
+name: CI
+
+# El runner de este workflow es la máquina de registro de LabIA (PROMPT-MAESTRO §1).
+# Lo que no sale del artefacto "estado" de un CI verde en main no es una cifra vigente.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    name: verificar (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar
+        run: python -m pip install -e ".[dev]"
+      - name: Tests
+        run: python -m pytest -q
+      - name: Tipos (mypy --strict)
+        run: python -m mypy
+      - name: Compuerta de reglas (cada regla separa sus casos)
+        run: python -m verificador casos
+      - name: Manifiestos y orden del pre-registro (§9)
+        run: python -m estudios.manifiestos proyectos --corridas corridas
+      - name: Bootstrap de Windows (el mismo script que usas en tus máquinas)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/bootstrap.ps1 -SinPull
+
+  estado:
+    needs: verificar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalar
+        run: python -m pip install -e .
+      - name: Estado
+        run: |
+          mkdir -p estado
+          git log -1 --format='%H %cs' > estado/commit.txt
+          python -m verificador reglas > estado/reglas.json
+          if find corridas -name '*.diff' | grep -q .; then
+            python -m estudios.tabla corridas --json estado/tabla.json | tee estado/tabla.md
+          fi
+      - name: Estudio sobre trazas públicas (arXiv 2607.27250, commit fijo)
+        run: |
+          git init -q ../cfa
+          git -C ../cfa fetch -q --depth 1 https://github.com/codeprakhar25/context-files-coding-agents c929724f4049af8e8a666efeb9abcc21724c6839
+          git -C ../cfa checkout -q FETCH_HEAD
+          python -m estudios.contexto_2607_27250 ../cfa/data/experiment_full.db \
+            --json estado/estudio_2607_27250.json | tee estado/estudio_2607_27250.md
+      - name: Resumen visible en la corrida
+        run: cat estado/*.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: estado
+          path: estado/

@@ -1,0 +1,22 @@
+# Manifiesto de un proyecto LabIA. Copiar a proyectos/NNN-nombre/proyecto.toml.
+# Un proyecto sin manifiesto no existe para LabIA. Lo valida:
+#   python -m estudios.manifiestos proyectos
+# Sin campo de estado: BUILT/SPEC'D lo deriva el CI, no se escribe aquí.
+
+nombre = "NNN-nombre"
+tipo = "python"              # python | typescript | ...; decide qué reglas aplican
+repositorio = "https://github.com/USUARIO/REPO"   # o "." si vive en proyectos/
+commit = ""                  # commit de partida de las tareas
+
+[rebanada]
+# La rebanada vertical más pequeña que sea observable, en una frase.
+descripcion = ""
+comando_demo = ""            # su salida alimenta R3 (logs JSON)
+comando_eval = ""            # el conjunto de evaluación propio del proyecto
+
+[reglas]
+directorio = ".labia/reglas" # reglas propias del proyecto, con casos
+# Reglas generales que aplican a ESTE proyecto. Un repo con otras convenciones
+# (p. ej. tests por funcionalidad en vez de test_<módulo>.py) no lleva R7 en modo
+# directorio: aplicarle el ruleset de LabIA da tasas sin sentido.
+aplica = ["R1", "R2", "R3", "R4", "R5", "R6", "R7"]

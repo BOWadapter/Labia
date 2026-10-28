@@ -1,0 +1,25 @@
+name: Hipótesis
+description: Una afirmación sobre agentes o reglas que se pueda falsar con un comando.
+labels: [hipotesis]
+body:
+  - type: input
+    id: enunciado
+    attributes:
+      label: Hipótesis
+      placeholder: "Inyectar AGENTS.md baja la tasa de R1 en Codex frente a no entregarlo"
+    validations:
+      required: true
+  - type: textarea
+    id: comando
+    attributes:
+      label: Comando que la pone a prueba
+      render: bash
+    validations:
+      required: true
+  - type: textarea
+    id: refutacion
+    attributes:
+      label: Qué resultado la mata
+      description: Escríbelo antes de correr el comando, con el tamaño de efecto mínimo que tomarías en serio.
+    validations:
+      required: true

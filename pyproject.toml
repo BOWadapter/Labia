@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "labia"
+version = "0.1.0"
+description = "Mide qué agente de código cumple qué regla: tasa de violación por regla, por agente y por forma de entregar las reglas."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "mypy>=1.10"]
+
+[tool.setuptools]
+packages = ["verificador", "verificador.reglas", "estudios"]
+
+[tool.mypy]
+strict = true
+files = ["verificador", "estudios", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

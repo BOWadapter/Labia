@@ -1,0 +1,36 @@
+name: Proyecto nuevo
+description: Trae un proyecto para que agentes lo trabajen y LabIA los compare.
+labels: [proyecto]
+body:
+  - type: input
+    id: repositorio
+    attributes:
+      label: Repositorio y commit de partida
+    validations:
+      required: true
+  - type: dropdown
+    id: tipo
+    attributes:
+      label: Tipo
+      options: [python, typescript, firmware, hardware, otro]
+    validations:
+      required: true
+  - type: textarea
+    id: rebanada
+    attributes:
+      label: Rebanada vertical mínima y el comando que la demuestra
+    validations:
+      required: true
+  - type: textarea
+    id: tarea
+    attributes:
+      label: Tarea para los agentes (texto idéntico para todos)
+    validations:
+      required: true
+  - type: input
+    id: asignacion
+    attributes:
+      label: ¿A qué agente se la darías hoy, sin medir?
+      description: Esto va a preregistro.toml y se commitea antes de cualquier corrida.
+    validations:
+      required: true

@@ -1,0 +1,37 @@
+name: Regla nueva
+description: Propón una regla mecánica para el verificador (general o de un tipo de proyecto).
+labels: [regla]
+body:
+  - type: input
+    id: enunciado
+    attributes:
+      label: Regla, en una frase
+      placeholder: "Cada módulo .ts tiene un *.test.ts junto a él"
+    validations:
+      required: true
+  - type: dropdown
+    id: tipo
+    attributes:
+      label: Tipo de proyecto
+      options: [cualquiera, python, typescript, firmware, hardware, otro]
+    validations:
+      required: true
+  - type: textarea
+    id: verificacion
+    attributes:
+      label: Cómo se verifica sin juicio humano
+      description: Qué cuenta como oportunidad y qué como violación. Si no se puede decidir por máquina, dilo.
+    validations:
+      required: true
+  - type: textarea
+    id: casos
+    attributes:
+      label: Un caso que la cumple y uno que la viola
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: origen
+    attributes:
+      label: Dónde la viste violada
+      description: Un diff, un commit o un proyecto real donde un agente la rompió. Las reglas con origen real van primero.
