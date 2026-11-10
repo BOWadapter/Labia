@@ -1,8 +1,7 @@
 # AGENTS.md — train-llm-from-scratch
 
 Derived from the repository's own CONTRIBUTING.md (FareedKhan-dev/train-llm-from-scratch,
-MIT). LabIA project 002 copies this file to the repository root for the `always_on`
-strategy and leaves it out for `none`.
+MIT).
 
 ## Checks before you finish
 

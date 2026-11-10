@@ -1,28 +1,37 @@
 # Pre-registro de 002-train-llm. Se commitea ANTES de cualquier corrida; después no se toca
 # (python -m estudios.manifiestos lo comprueba contra el historial de git).
 #
-# Protocolo
-# - Repo de partida: el del manifiesto, en su commit fijo, limpio para cada corrida.
-# - none: sin AGENTS.md. always_on: proyectos/002-train-llm/AGENTS.md copiado a la raíz.
-#   CONTRIBUTING.md del repo queda en ambas: lo único que se manipula es AGENTS.md.
-# - El enunciado va idéntico a los dos agentes, en inglés como el repo, y no menciona
-#   convenciones ni tests: hacerlo filtraría el tratamiento.
-# - Una corrida = el `git diff` final del agente, guardado en
-#   corridas/002-train-llm/<id>/<agente>__<estrategia>__<n>.diff
+# Protocolo. Lo ejecuta `python -m estudios.corrida correr proyectos/002-train-llm`.
+# - Repo de partida: el del manifiesto, en su commit fijo, clon limpio para cada corrida.
+# - Una sola estrategia, always_on: proyectos/002-train-llm/AGENTS.md se copia a la raíz con
+#   el nombre que cada agente lee (`contexto`). §9 pregunta a qué agente asignar con las
+#   reglas entregadas; comparar entregas duplicaría las corridas sin acercar esa respuesta.
+#   CONTRIBUTING.md del repo queda como está.
+# - Los dos agentes sólo leen y editan archivos, sin terminal ni red: no pueden correr los
+#   tests del repo. Se mide lo que escriben con las reglas a la vista, sin ciclo de
+#   verificación.
+# - El enunciado va idéntico a los dos, en inglés como el repo, y no menciona convenciones
+#   ni tests: hacerlo filtraría el tratamiento.
+# - Una corrida = el `git diff` final contra lo que recibió el agente, guardado en
+#   corridas/002-train-llm/<id>/<agente>__always_on__<n>.diff
+# - Regla decisiva: R1. R7 (una oportunidad por diff) y P2 (sólo t1) no dan para decidir
+#   con este tamaño; `python -m estudios.decision` las reporta sin meterlas al veredicto.
 #
-# asignacion_sin_medir la escribe la persona responsable, antes de correr nada.
-# Mientras esté vacía, el CI queda en rojo a propósito.
+# Faltan dos cosas, y las escribe la persona responsable antes de correr nada:
+#   1. `modelo` de [agente.opencode]: proveedor/modelo, tal como lo lista `opencode models`.
+#   2. `asignacion_sin_medir` de cada tarea: a qué agente se la darías hoy, sin medir.
+# Mientras falten, el CI queda en rojo a propósito.
 
 [[tarea]]
 id = "t1-label-smoothing"
 enunciado = """Add label smoothing to supervised fine-tuning (SFT). Introduce a `label_smoothing` \
 hyperparameter (a float, default 0.0, valid range 0 <= value < 1) and apply it to the SFT \
 cross-entropy loss. Values outside the valid range must be rejected when the configuration is loaded."""
-agentes = ["claude_code", "codex"]
-estrategias = ["none", "always_on"]
+agentes = ["claude_code", "opencode"]
+estrategias = ["always_on"]
 repeticiones = 3
 asignacion_sin_medir = ""
-reglas_decisivas = ["P2", "R1", "R7"]
+reglas_decisivas = ["R1"]
 
 [[tarea]]
 id = "t2-repetition-penalty"
@@ -30,19 +39,56 @@ enunciado = """Add a repetition penalty to text generation. Tokens that already 
 context get their logits penalized as in CTRL: positive logits are divided by \
 `repetition_penalty` and negative logits are multiplied by it. A value of 1.0 disables it. \
 Expose it in `scripts/chat.py` as `--repetition_penalty` (default 1.0)."""
-agentes = ["claude_code", "codex"]
-estrategias = ["none", "always_on"]
+agentes = ["claude_code", "opencode"]
+estrategias = ["always_on"]
 repeticiones = 3
 asignacion_sin_medir = ""
-reglas_decisivas = ["R1", "R7"]
+reglas_decisivas = ["R1"]
 
 [[tarea]]
 id = "t3-inverse-sqrt"
 enunciado = """Add an `inverse_sqrt` learning-rate schedule: linear warmup to `lr` over \
 `warmup_steps`, then `lr * sqrt(warmup_steps / step)`, never below `min_lr`. It must be \
 selectable everywhere the existing schedules (`cosine`, `wsd`, `linear`) are."""
-agentes = ["claude_code", "codex"]
-estrategias = ["none", "always_on"]
+agentes = ["claude_code", "opencode"]
+estrategias = ["always_on"]
 repeticiones = 3
 asignacion_sin_medir = ""
-reglas_decisivas = ["R1", "R7"]
+reglas_decisivas = ["R1"]
+
+# Cómo se lanza cada agente. El enunciado entra por stdin. Antes de fijar este archivo,
+# `python -m estudios.corrida probar proyectos/002-train-llm AGENTE` dice si arranca, edita
+# y lee su archivo de reglas.
+[agente.claude_code]
+comando = [
+    "claude", "-p", "--output-format", "stream-json", "--verbose", "--model", "{modelo}",
+    "--tools", "Read,Edit,Write,Glob,Grep", "--permission-mode", "acceptEdits",
+    "--permission-prompts", "none", "--strict-mcp-config", "--no-session-persistence",
+]
+modelo = "sonnet"
+contexto = "CLAUDE.md"
+
+[agente.opencode]
+comando = ["opencode", "run", "--standalone", "--format", "json", "--auto", "--archived", "--model", "{modelo}"]
+modelo = ""
+contexto = "AGENTS.md"
+
+[agente.opencode.entorno]
+OPENCODE_DISABLE_CLAUDE_CODE = "1"
+OPENCODE_CONFIG_CONTENT = '{"permissions":[{"action":"shell","resource":"*","effect":"deny"},{"action":"webfetch","resource":"*","effect":"deny"},{"action":"websearch","resource":"*","effect":"deny"},{"action":"external_directory","resource":"*","effect":"deny"},{"action":"subagent","resource":"*","effect":"deny"},{"action":"question","resource":"*","effect":"deny"},{"action":"skill","resource":"*","effect":"deny"},{"action":"browser","resource":"*","effect":"deny"}]}'
+
+[ejecucion]
+limite_minutos = 30
+semilla = 20261204
+
+[decision]
+alfa = 0.05
+muestras = 20000
+semilla = 20261204
+
+# Tarea de ensayo para `python -m estudios.corrida piloto`: del mismo tamaño que las
+# registradas y distinta de ellas. Nunca se registra.
+[piloto]
+enunciado = """Add stop sequences to text generation. `generate_reply` accepts `stop`, a list \
+of strings, and the returned text is cut right before the first occurrence of any of them. \
+Expose it in `scripts/chat.py` as `--stop`, which can be given more than once (default: none)."""
