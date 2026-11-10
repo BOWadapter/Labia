@@ -42,7 +42,10 @@ línea `Evidencia:` con el comando que demuestra el cambio.
 
 Una corrida es el `git diff` que produjo el agente sobre el commit del manifiesto, con
 el `AGENTS.md` entregado según la estrategia (`none`, `always_on`, `selective`). En el
-PR indica agente, versión y modelo.
+PR indica agente, versión y modelo. `python -m estudios.corrida correr proyectos/NNN-nombre`
+lo hace con los agentes declarados en el pre-registro (`[agente.<id>]`) y deja esos datos
+en un `.json` junto a cada diff; antes, `python -m estudios.corrida probar` dice si cada
+agente arranca, edita y lee su archivo de reglas.
 
 **Buenas primeras contribuciones:** una regla mecánica para un tipo nuevo
 (`typescript`: `tsc --strict`, TSDoc, `*.test.ts` junto al código; hardware:
