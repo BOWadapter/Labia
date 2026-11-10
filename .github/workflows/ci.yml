@@ -64,6 +64,12 @@ jobs:
           if find corridas -name '*.diff' | grep -q .; then
             python -m estudios.tabla corridas --json estado/tabla.json | tee estado/tabla.md
           fi
+          for proyecto in proyectos/[0-9]*/; do
+            [ -f "${proyecto}preregistro.toml" ] || continue
+            nombre=$(basename "$proyecto")
+            python -m estudios.decision "$proyecto" --json "estado/decision_$nombre.json" \
+              | tee "estado/decision_$nombre.md"
+          done
       - name: Estudio sobre trazas públicas (arXiv 2607.27250, commit fijo)
         run: |
           git init -q ../cfa
@@ -71,6 +77,10 @@ jobs:
           git -C ../cfa checkout -q FETCH_HEAD
           python -m estudios.contexto_2607_27250 ../cfa/data/experiment_full.db \
             --json estado/estudio_2607_27250.json | tee estado/estudio_2607_27250.md
+      - name: Regla de decisión contra las mismas trazas (falsa alarma y potencia)
+        run: |
+          python -m estudios.potencia ../cfa/data/experiment_full.db \
+            --json estado/potencia.json | tee estado/potencia.md
       - name: Resumen visible en la corrida
         run: cat estado/*.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
