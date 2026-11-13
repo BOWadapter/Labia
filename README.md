@@ -35,6 +35,7 @@ La tabla vigente es el artefacto `estado` del último CI en `main`.
 python -m estudios.corrida probar proyectos/NNN-nombre AGENTE   # ¿arranca, edita y lee sus reglas?
 python -m estudios.corrida piloto proyectos/NNN-nombre AGENTE   # una corrida de ensayo, sin registrar
 python -m estudios.corrida correr proyectos/NNN-nombre          # la batería pre-registrada
+python -m estudios.corrida ocultos proyectos/NNN-nombre         # ¿cada test oculto falla sin hacer la tarea?
 python -m estudios.decision proyectos/NNN-nombre                # qué agente indica, o que no los distingue
 ```
 

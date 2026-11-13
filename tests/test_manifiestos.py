@@ -178,3 +178,18 @@ def test_valores_fuera_de_rango_en_el_protocolo_se_rechazan(tmp_path: Path) -> N
     (proyecto / "preregistro.toml").write_text(PREREGISTRO + texto, encoding="utf-8")
     errores = validar_proyecto(proyecto)
     assert any("alfa" in e for e in errores) and any("limite_minutos" in e for e in errores)
+
+
+def test_ocultos_como_regla_decisiva_exige_su_archivo(tmp_path: Path) -> None:
+    """OCULTOS sólo vale con un archivo de tests ocultos que exista."""
+    proyecto = _repo(tmp_path)
+    texto = PREREGISTRO.replace('reglas_decisivas = ["R1", "R2"]', 'reglas_decisivas = ["OCULTOS"]')
+    (proyecto / "preregistro.toml").write_text(texto, encoding="utf-8")
+    assert any("necesita 'tests_ocultos'" in e for e in validar_proyecto(proyecto))
+    (proyecto / "preregistro.toml").write_text(
+        texto.replace('reglas_decisivas = ["OCULTOS"]', 'reglas_decisivas = ["OCULTOS"]\ntests_ocultos = "no.py"'),
+        encoding="utf-8",
+    )
+    assert any("'tests_ocultos'" in e for e in validar_proyecto(proyecto))
+    (proyecto / "no.py").write_text("def test_x() -> None:\n    assert False\n", encoding="utf-8")
+    assert validar_proyecto(proyecto) == []
