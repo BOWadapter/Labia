@@ -43,6 +43,7 @@ from pathlib import Path
 from verificador import fuente_diff, verificar, wilson
 
 from .campos import como_entero, como_lista, como_real, como_tabla, como_texto
+from .manifiestos import OCULTOS
 
 ALFA = 0.05
 MUESTRAS = 20000
@@ -208,6 +209,18 @@ def resolucion(repeticiones_por_estrato: Sequence[int], muestras: int = MUESTRAS
     return repartos, (min(1.0, 2 / repartos) if repartos <= LIMITE_EXACTO else 1 / (1 + muestras))
 
 
+def _resultado_oculto(metadatos: Path) -> str | None:
+    """'pasa' o 'falla' según los metadatos de la corrida; None si aún no se evaluó."""
+    if not metadatos.is_file():
+        return None
+    try:
+        datos = json.loads(metadatos.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    resultado = como_tabla(como_tabla(datos).get("ocultos")).get("resultado")
+    return resultado if resultado in ("pasa", "falla") else None
+
+
 def esperadas(tareas: Sequence[Mapping[str, object]]) -> list[tuple[str, str, str, int]]:
     """Todas las corridas que el pre-registro compromete: (tarea, agente, estrategia, n)."""
     return [
@@ -239,13 +252,23 @@ def informe(directorio: Path, corridas: Path) -> tuple[str, dict[str, object]]:
     por_regla: dict[str, list[Observacion]] = defaultdict(list)
     descriptivo: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0])
     presentes = 0
+    sin_ocultos = 0
     for tarea, agente, estrategia, n in comprometidas:
         archivo = corridas / nombre / tarea / f"{agente}__{estrategia}__{n}.diff"
         if not archivo.is_file():
             continue
+        if OCULTOS in decisivas[tarea]:
+            resultado = _resultado_oculto(archivo.with_suffix(".json"))
+            if resultado is None:
+                sin_ocultos += 1
+                continue
+            fallo = int(resultado == "falla")
+            descriptivo[(OCULTOS, agente)][0] += fallo
+            descriptivo[(OCULTOS, agente)][1] += 1
+            por_regla[OCULTOS].append(Observacion(f"{tarea}/{estrategia}", agente, 1, fallo))
         presentes += 1
         fuente = fuente_diff(archivo.read_text(encoding="utf-8", errors="replace"))
-        for r in verificar(fuente, aplica | decisivas[tarea], tipo, extra):
+        for r in verificar(fuente, (aplica | decisivas[tarea]) - {OCULTOS}, tipo, extra):
             if not r.verificable:
                 continue
             descriptivo[(r.regla, agente)][0] += r.violaciones
@@ -255,6 +278,9 @@ def informe(directorio: Path, corridas: Path) -> tuple[str, dict[str, object]]:
     agentes = sorted({a for t in tareas for a in como_lista(t.get("agentes"))})
     completo = bool(comprometidas) and presentes == len(comprometidas)
     md = [f"### Decisión de {nombre}", "", f"Corridas: {presentes} de {len(comprometidas)} pre-registradas.", ""]
+    if sin_ocultos:
+        md += [f"{sin_ocultos} corrida(s) sin resultado de tests ocultos: `python -m estudios.corrida ocultos "
+               f"proyectos/{nombre}` las evalúa.", ""]
     datos: dict[str, object] = {
         "proyecto": nombre, "corridas": presentes, "comprometidas": len(comprometidas),
         "alfa": alfa, "completo": completo,

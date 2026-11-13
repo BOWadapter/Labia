@@ -49,11 +49,14 @@ TAREA: Esquema = {
     "reglas_decisivas": list,
 }
 AGENTE: Esquema = {"comando": list, "modelo": str, "contexto": str}
+# Regla decisiva que no sale del verificador sino de correr tests ocultos sobre cada diff.
+OCULTOS = "OCULTOS"
 # Tablas con claves opcionales: tipos admitidos por clave.
 PROTOCOLO: Mapping[str, Mapping[str, tuple[type, ...]]] = {
     "ejecucion": {"limite_minutos": (int, float), "semilla": (int,)},
     "decision": {"alfa": (float,), "muestras": (int,), "semilla": (int,)},
     "piloto": {"enunciado": (str,)},
+    "ocultos": {"dependencias": (list,), "limite_minutos": (int, float)},
 }
 TABLAS_PREREGISTRO = ("tarea", "agente", *PROTOCOLO)
 # Tareas, agentes y estrategias forman rutas: corridas/<proyecto>/<tarea>/<agente>__<estrategia>__<n>.diff
@@ -133,6 +136,8 @@ def validar_protocolo(prereg: Mapping[str, object], donde: str, plantilla: bool 
             elif isinstance(valor, bool) or not isinstance(valor, claves[clave]):
                 esperado = " o ".join(t.__name__ for t in claves[clave])
                 errores.append(f"{sitio}.{clave}: debe ser {esperado}, es {type(valor).__name__}")
+            elif isinstance(valor, list) and not all(isinstance(v, str) for v in valor):
+                errores.append(f"{sitio}.{clave}: la lista sólo admite texto")
     ejecucion, decision = prereg.get("ejecucion", {}), prereg.get("decision", {})
     limite = ejecucion.get("limite_minutos", 1) if isinstance(ejecucion, dict) else 1
     if isinstance(limite, (int, float)) and not isinstance(limite, bool) and limite <= 0:
@@ -187,8 +192,14 @@ def validar_proyecto(directorio: Path) -> list[str]:
         ids: list[str] = []
         for n, tarea in enumerate(tareas, 1):
             donde = f"{prereg}[tarea {n}]"
-            errores.extend(validar_esquema(tarea, TAREA, donde))
+            errores.extend(validar_esquema({c: v for c, v in tarea.items() if c != "tests_ocultos"}, TAREA, donde))
             ids.append(str(tarea.get("id", "")))
+            ocultos = tarea.get("tests_ocultos")
+            if ocultos is not None and (not isinstance(ocultos, str) or not (directorio / ocultos).is_file()):
+                errores.append(f"{donde}: 'tests_ocultos' debe ser la ruta, relativa al proyecto, de un archivo que existe")
+            decisivas_tarea = tarea.get("reglas_decisivas", [])
+            if isinstance(decisivas_tarea, list) and OCULTOS in decisivas_tarea and ocultos is None:
+                errores.append(f"{donde}: la regla decisiva {OCULTOS} necesita 'tests_ocultos'")
             agentes = tarea.get("agentes", [])
             agentes = agentes if isinstance(agentes, list) else []
             estrategias = tarea.get("estrategias", [])
@@ -217,7 +228,7 @@ def validar_proyecto(directorio: Path) -> list[str]:
             decisivas = tarea.get("reglas_decisivas", [])
             errores.extend(
                 f"{donde}: regla decisiva desconocida: {r}"
-                for r in (decisivas if isinstance(decisivas, list) else []) if r not in conocidos
+                for r in (decisivas if isinstance(decisivas, list) else []) if r not in conocidos | {OCULTOS}
             )
         if len(ids) != len(set(ids)):
             errores.append(f"{prereg}: ids de tarea repetidos")

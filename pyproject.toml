@@ -21,6 +21,8 @@ packages = ["verificador", "verificador.reglas", "estudios"]
 [tool.mypy]
 strict = true
 files = ["verificador", "estudios", "tests", "proyectos"]
+# Los tests ocultos se ejecutan dentro del repositorio de cada proyecto, con sus dependencias.
+exclude = ["^proyectos/[^/]+/ocultos/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

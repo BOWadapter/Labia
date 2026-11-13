@@ -27,13 +27,20 @@ código de salida distinto de cero, o un evento ``{"type": "error"}`` o
 vuelve a fallar la batería se detiene, y al relanzarla continúa donde quedó. Agotar el
 límite de tiempo sí se registra, marcado en los metadatos.
 
-``correr`` no enseña resultados de reglas mientras la batería está en marcha: el
-veredicto lo da ``estudios.decision`` cuando están todas las corridas.
+Si la tarea declara ``tests_ocultos``, cada diff se aplica sobre otro clon limpio, se
+añade ese archivo de tests (que el agente nunca vio) y se corre con pytest en un entorno
+propio del proyecto (``[ocultos] dependencias``), creado una vez en el directorio del
+corredor. Pasa o falla queda en los metadatos de la corrida; un entorno roto no cuenta
+como fallo del agente.
+
+``correr`` no enseña resultados de reglas ni de tests mientras la batería está en marcha:
+el veredicto lo da ``estudios.decision`` cuando están todas las corridas.
 
 Uso:
     python -m estudios.corrida probar PROYECTO AGENTE [--modelo M]
     python -m estudios.corrida piloto PROYECTO AGENTE [--modelo M]
     python -m estudios.corrida correr PROYECTO [--corridas corridas] [--max N] [--simular]
+    python -m estudios.corrida ocultos PROYECTO [--corridas corridas]
 """
 
 from __future__ import annotations
@@ -68,6 +75,9 @@ from .manifiestos import validar_proyecto
 ESTRATEGIAS = ("none", "always_on")
 LIMITE_MINUTOS = 30.0
 LIMITE_PRUEBA_S = 300.0
+LIMITE_OCULTOS_MINUTOS = 10.0
+# Lo que el entorno de tests ocultos debe poder importar, además de lo que declare el proyecto.
+BASICO_OCULTOS = ("pytest",)
 SEMILLA = 20261204
 MARCA = "labia-contexto-ok"
 ENUNCIADO_PRUEBA = (
@@ -116,6 +126,7 @@ class Tarea:
     agentes: tuple[str, ...]
     estrategias: tuple[str, ...]
     repeticiones: int
+    ocultos: str
 
 
 @dataclass(frozen=True)
@@ -135,6 +146,8 @@ class Proyecto:
     limite_s: float
     semilla: int
     piloto: str
+    dependencias: tuple[str, ...]
+    limite_ocultos_s: float
 
     def agente(self, identificador: str) -> Agente:
         """El agente declarado con ese id, o una Falla que dice cuáles hay."""
@@ -180,10 +193,12 @@ def cargar(directorio: Path) -> Proyecto:
         Tarea(
             como_texto(t.get("id")), como_texto(t.get("enunciado")), tuple(como_lista(t.get("agentes"))),
             tuple(como_lista(t.get("estrategias"))), como_entero(t.get("repeticiones"), 0),
+            como_texto(t.get("tests_ocultos")),
         )
         for t in (como_tabla(bruta) for bruta in prereg.get("tarea", []) if isinstance(bruta, dict))
     )
     ejecucion = como_tabla(prereg.get("ejecucion"))
+    ocultos = como_tabla(prereg.get("ocultos"))
     reglas_de_agente = directorio / "AGENTS.md"
     return Proyecto(
         directorio=directorio,
@@ -199,6 +214,8 @@ def cargar(directorio: Path) -> Proyecto:
         limite_s=60 * como_real(ejecucion.get("limite_minutos"), LIMITE_MINUTOS),
         semilla=como_entero(ejecucion.get("semilla"), SEMILLA),
         piloto=como_texto(como_tabla(prereg.get("piloto")).get("enunciado")),
+        dependencias=tuple(como_lista(ocultos.get("dependencias"))),
+        limite_ocultos_s=60 * como_real(ocultos.get("limite_minutos"), LIMITE_OCULTOS_MINUTOS),
     )
 
 
@@ -558,6 +575,116 @@ def piloto(directorio: Path, identificador: str, modelo: str | None) -> int:
     return 0 if ejecucion.diff.strip() else 1
 
 
+def _python_de(entorno: Path) -> Path:
+    """Intérprete de un entorno virtual."""
+    return entorno / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+
+
+def _entorno_ocultos(proyecto: Proyecto) -> Path:
+    """Intérprete con las dependencias del proyecto, para correr tests ocultos. Se crea una vez.
+
+    El código del proyecto no se instala: los tests importan el clon de cada corrida.
+    ``LABIA_PYTHON_OCULTOS`` apunta a un intérprete ya preparado y evita crear el entorno.
+    """
+    propio = os.environ.get("LABIA_PYTHON_OCULTOS")
+    if propio:
+        return Path(propio)
+    paquetes = (*proyecto.dependencias, *BASICO_OCULTOS)
+    huella = hashlib.sha256("\n".join((sys.version, *paquetes)).encode("utf-8")).hexdigest()[:12]
+    entorno = _hogar() / "entornos" / f"{proyecto.nombre}-{huella}"
+    python = _python_de(entorno)
+    listo = entorno / "labia-listo"
+    if not listo.is_file():
+        _borrar(entorno)
+        print(f"preparando el entorno de tests ocultos de {proyecto.nombre} (sólo la primera vez; "
+              "puede tardar varios minutos)", flush=True)
+        for orden in ([sys.executable, "-m", "venv", str(entorno)],
+                      [str(python), "-m", "pip", "install", "--disable-pip-version-check", "-q", *paquetes]):
+            salida = subprocess.run(orden, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if salida.returncode != 0:
+                raise Falla(f"no pude preparar el entorno de tests ocultos: {(salida.stderr or salida.stdout)[-600:]}")
+        listo.write_text("\n".join(paquetes) + "\n", encoding="utf-8")
+    return python
+
+
+def _nombre_oculto(tarea: Tarea) -> str:
+    """Nombre con el que el archivo de tests ocultos entra al clon; no choca con los del agente."""
+    return f"test_labia_oculto_{tarea.id.replace('-', '_').replace('.', '_')}.py"
+
+
+def evaluar_ocultos(proyecto: Proyecto, tarea: Tarea, diff: bytes) -> dict[str, object]:
+    """Aplica el diff a un clon limpio, añade los tests ocultos y los corre. Devuelve el resultado publicable.
+
+    ``pasa`` si pytest termina bien; ``falla`` si algún test falla o no se puede importar lo
+    que pide el enunciado. Un pytest que no llega a correr es una Falla del corredor.
+    """
+    origen = proyecto.directorio / tarea.ocultos
+    if not origen.is_file():
+        raise Falla(f"{tarea.id}: no existe {origen}")
+    python = _entorno_ocultos(proyecto)
+    texto = origen.read_bytes()
+    inicio = time.monotonic()
+    with _trabajo() as trabajo:
+        _clon(proyecto, trabajo, None)
+        if diff.strip():
+            parche = trabajo.parent / f"{trabajo.name}.diff"
+            parche.write_bytes(diff)
+            try:
+                _git("apply", "--whitespace=nowarn", str(parche), cwd=trabajo)
+            finally:
+                parche.unlink(missing_ok=True)
+        destino = trabajo / "tests" / _nombre_oculto(tarea)
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(texto)
+        ambiente = {**os.environ, "PYTHONPATH": str(trabajo), "PYTHONDONTWRITEBYTECODE": "1"}
+        orden = [str(python), "-m", "pytest", "-q", "-p", "no:cacheprovider", "--no-header", "-rN",
+                 str(destino.relative_to(trabajo))]
+        try:
+            salida = subprocess.run(orden, cwd=trabajo, env=ambiente, capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace", timeout=proyecto.limite_ocultos_s)
+            codigo: int | None = salida.returncode
+            resumen = next((l.strip() for l in reversed(salida.stdout.splitlines()) if l.strip()), "")
+        except subprocess.TimeoutExpired:
+            codigo, resumen = None, "agotó el límite de tiempo"
+    if codigo not in (None, 0, 1, 2):
+        raise Falla(f"{tarea.id}: pytest no llegó a correr los tests ocultos (código {codigo}): {resumen[-300:]}")
+    return {
+        "resultado": "pasa" if codigo == 0 else "falla",
+        "resumen": resumen[-200:],
+        "duracion_s": round(time.monotonic() - inicio, 1),
+        "sha256_tests": hashlib.sha256(texto).hexdigest(),
+    }
+
+
+def ocultos(directorio: Path, corridas: Path) -> int:
+    """Comprueba que cada test oculto falla sin cambios y evalúa las corridas registradas que no lo tengan."""
+    proyecto = cargar(directorio)
+    con_tests = [t for t in proyecto.tareas if t.ocultos]
+    if not con_tests:
+        print(f"{proyecto.nombre}: ninguna tarea declara tests_ocultos")
+        return 0
+    malos = 0
+    for tarea in con_tests:
+        base = evaluar_ocultos(proyecto, tarea, b"")
+        bien = base["resultado"] == "falla"
+        malos += not bien
+        print(f"{tarea.id}: sin cambios {base['resultado']} ({base['resumen']})"
+              + ("" if bien else " — un test oculto que pasa sin hacer la tarea no mide nada"))
+    evaluadas = 0
+    for tarea in con_tests:
+        for meta in sorted((corridas / proyecto.nombre / tarea.id).glob("*.json")):
+            datos = json.loads(meta.read_text(encoding="utf-8"))
+            diff = meta.with_suffix(".diff")
+            if not isinstance(datos, dict) or "ocultos" in datos or not diff.is_file():
+                continue
+            datos["ocultos"] = evaluar_ocultos(proyecto, tarea, diff.read_bytes())
+            meta.write_text(json.dumps(datos, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+            evaluadas += 1
+            print(f"  {meta.stem}: {datos['ocultos']['resultado']}")
+    print(f"corridas evaluadas ahora: {evaluadas}")
+    return 1 if malos else 0
+
+
 def pendientes(proyecto: Proyecto, corridas: Path) -> list[tuple[Tarea, str, str, int]]:
     """Corridas pre-registradas que aún no tienen diff, en un orden al azar fijado por la semilla.
 
@@ -590,6 +717,9 @@ def _impedimentos(proyecto: Proyecto) -> list[str]:
         for e in estrategias if e not in ESTRATEGIAS
     ]
     con_reglas = "always_on" in estrategias
+    for tarea in proyecto.tareas:
+        if tarea.ocultos and not (proyecto.directorio / tarea.ocultos).is_file():
+            errores.append(f"{tarea.id}: no existe el archivo de tests ocultos {tarea.ocultos}")
     if con_reglas and proyecto.reglas_de_agente is None:
         errores.append(f"always_on necesita el archivo de reglas {proyecto.directorio / 'AGENTS.md'}")
     for identificador in sorted({a for tarea in proyecto.tareas for a in tarea.agentes}):
@@ -680,6 +810,8 @@ def correr(directorio: Path, corridas: Path, maximo: int | None, simular: bool, 
         destino = _destino(corridas, proyecto, tarea, identificador, estrategia, n)
         destino.parent.mkdir(parents=True, exist_ok=True)
         metadatos = _metadatos(proyecto, tarea, agente, estrategia, n, ejecucion, inicio, contexto, ajeno)
+        if tarea.ocultos:
+            metadatos["ocultos"] = evaluar_ocultos(proyecto, tarea, ejecucion.diff)
         destino.with_suffix(".json").write_text(
             json.dumps(metadatos, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
@@ -712,6 +844,9 @@ def main(argv: list[str] | None = None) -> int:
     bateria.add_argument("--max", type=int, dest="maximo")
     bateria.add_argument("--simular", action="store_true")
     bateria.add_argument("--con-contexto-ajeno", action="store_true")
+    revision = acciones.add_parser("ocultos")
+    revision.add_argument("proyecto", type=Path)
+    revision.add_argument("--corridas", type=Path, default=Path("corridas"))
     args = parser.parse_args(argv)
     for flujo in (sys.stdout, sys.stderr):
         if isinstance(flujo, io.TextIOWrapper):
@@ -721,6 +856,8 @@ def main(argv: list[str] | None = None) -> int:
             return probar(args.proyecto, args.agente, args.modelo)
         if args.accion == "piloto":
             return piloto(args.proyecto, args.agente, args.modelo)
+        if args.accion == "ocultos":
+            return ocultos(args.proyecto, args.corridas)
         return correr(args.proyecto, args.corridas, args.maximo, args.simular, args.con_contexto_ajeno)
     except Falla as falla:
         print(f"FALLO — {falla}", file=sys.stderr)

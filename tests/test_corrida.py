@@ -270,3 +270,58 @@ def test_agente_no_declarado_o_ausente_se_explica(banco: Banco, capsys: pytest.C
     assert "PATH" in capsys.readouterr().err
     assert banco.correr() == 1
     assert "programa-que-no-existe" in capsys.readouterr().err
+
+
+OCULTO_FALSO = '''\
+"""Test oculto de mentira: exige que hola.py tenga una función suma anotada."""
+import pathlib
+
+
+def test_suma_anotada() -> None:
+    texto = pathlib.Path("hola.py").read_text(encoding="utf-8") if pathlib.Path("hola.py").exists() else ""
+    assert "def suma(a: int, b: int) -> int:" in texto
+'''
+
+
+def _con_ocultos(banco: Banco, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Declara tests ocultos en la tarea y usa este intérprete para correrlos."""
+    (banco.proyecto / "ocultos").mkdir()
+    (banco.proyecto / "ocultos" / "test_t1.py").write_text(OCULTO_FALSO, encoding="utf-8")
+    monkeypatch.setenv("LABIA_PYTHON_OCULTOS", sys.executable)
+    _git(banco.raiz, "add", "-A")
+    banco.reescribir('reglas_decisivas = ["R1"]', 'reglas_decisivas = ["OCULTOS"]\ntests_ocultos = "ocultos/test_t1.py"')
+
+
+def test_los_tests_ocultos_deciden_sobre_un_clon_limpio(banco: Banco, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cada corrida guarda si sus tests ocultos pasan; el agente no los ve y la decisión los usa."""
+    _con_ocultos(banco, monkeypatch)
+    assert banco.correr() == 0
+    carpeta = banco.corridas / "001-demo" / "t1"
+    resultados = {
+        meta.stem: json.loads(meta.read_text(encoding="utf-8"))["ocultos"]["resultado"] for meta in carpeta.glob("*.json")
+    }
+    assert resultados == {
+        "falso_a__always_on__1": "pasa", "falso_b__always_on__1": "pasa",
+        "falso_a__none__1": "falla", "falso_b__none__1": "falla",
+    }
+    assert all("labia_oculto" not in d.read_text(encoding="utf-8") for d in carpeta.glob("*.diff"))
+    from estudios.decision import informe
+
+    _, datos = informe(banco.proyecto, banco.corridas)
+    tasas = datos["tasas"]
+    assert isinstance(tasas, list)
+    assert {(t["regla"], t["agente"], t["violaciones"], t["oportunidades"]) for t in tasas if t["regla"] == "OCULTOS"} == {
+        ("OCULTOS", "falso_a", 1, 2), ("OCULTOS", "falso_b", 1, 2),
+    }
+
+
+def test_ocultos_rechaza_un_test_que_pasa_sin_hacer_la_tarea(
+    banco: Banco, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Un test oculto que pasa sobre el repositorio sin cambios no mide nada: se dice."""
+    _con_ocultos(banco, monkeypatch)
+    assert main(["ocultos", str(banco.proyecto), "--corridas", str(banco.corridas)]) == 0
+    assert "sin cambios falla" in capsys.readouterr().out
+    (banco.proyecto / "ocultos" / "test_t1.py").write_text("def test_nada() -> None:\n    pass\n", encoding="utf-8")
+    assert main(["ocultos", str(banco.proyecto), "--corridas", str(banco.corridas)]) == 1
+    assert "no mide nada" in capsys.readouterr().out
