@@ -5,6 +5,11 @@ medir. Eso sólo vale si (1) el pre-registro está bien escrito, (2) se commite�
 primera corrida de su proyecto, y (3) no se tocó después. Este módulo lo comprueba con el
 historial de git en lugar de confiar en fechas escritas a mano.
 
+El pre-registro fija también cómo se corre y cómo se decide: las tablas ``[agente.<id>]``
+(comando, modelo y archivo de reglas de cada agente), ``[ejecucion]``, ``[decision]`` y
+``[piloto]`` quedan congeladas junto con las tareas. Son opcionales para quien aporta
+corridas hechas a mano; ``estudios.corrida`` exige las de los agentes que lanza.
+
 Uso:
     python -m estudios.manifiestos proyectos --corridas corridas
 """
@@ -13,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import re
 import subprocess
 import sys
 import tomllib
@@ -41,6 +47,30 @@ TAREA: Esquema = {
     "asignacion_sin_medir": str,
     "reglas_decisivas": list,
 }
+AGENTE: Esquema = {"comando": list, "modelo": str, "contexto": str}
+# Regla decisiva que no sale del verificador sino de correr tests ocultos sobre cada diff.
+OCULTOS = "OCULTOS"
+# Tablas con claves opcionales: tipos admitidos por clave.
+PROTOCOLO: Mapping[str, Mapping[str, tuple[type, ...]]] = {
+    "ejecucion": {"limite_minutos": (int, float), "semilla": (int,)},
+    "decision": {"alfa": (float,), "muestras": (int,), "semilla": (int,)},
+    "piloto": {"enunciado": (str,)},
+    "ocultos": {"dependencias": (list,), "limite_minutos": (int, float)},
+}
+TABLAS_PREREGISTRO = ("tarea", "agente", *PROTOCOLO)
+# Tareas, agentes y estrategias forman rutas: corridas/<proyecto>/<tarea>/<agente>__<estrategia>__<n>.diff
+_NOMBRE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _pista(clave: str, validas: Mapping[str, object] | tuple[str, ...]) -> str:
+    """Sugerencia para una clave mal escrita."""
+    parecidas = difflib.get_close_matches(clave, list(validas), n=1)
+    return f" (¿quisiste decir '{parecidas[0]}'?)" if parecidas else ""
+
+
+def _nombre_valido(nombre: object) -> bool:
+    """True si el nombre sirve como parte de la ruta de una corrida."""
+    return isinstance(nombre, str) and _NOMBRE.fullmatch(nombre) is not None and "__" not in nombre
 
 
 def validar_esquema(datos: Mapping[str, object], esquema: Esquema, donde: str) -> list[str]:
@@ -48,9 +78,7 @@ def validar_esquema(datos: Mapping[str, object], esquema: Esquema, donde: str) -
     errores: list[str] = []
     for clave, valor in datos.items():
         if clave not in esquema:
-            parecidas = difflib.get_close_matches(clave, list(esquema), n=1)
-            pista = f" (¿quisiste decir '{parecidas[0]}'?)" if parecidas else ""
-            errores.append(f"{donde}: clave desconocida '{clave}'{pista}")
+            errores.append(f"{donde}: clave desconocida '{clave}'{_pista(clave, esquema)}")
             continue
         esperado = esquema[clave]
         if isinstance(esperado, Mapping):
@@ -63,6 +91,62 @@ def validar_esquema(datos: Mapping[str, object], esquema: Esquema, donde: str) -
         elif isinstance(valor, list) and not all(isinstance(v, str) for v in valor):
             errores.append(f"{donde}.{clave}: la lista sólo admite texto")
     errores.extend(f"{donde}: falta la clave '{c}'" for c in esquema if c not in datos)
+    return errores
+
+
+def validar_protocolo(prereg: Mapping[str, object], donde: str, plantilla: bool = False) -> list[str]:
+    """Valida las tablas del pre-registro que fijan cómo se corre y cómo se decide."""
+    errores = [
+        f"{donde}: tabla desconocida '{clave}'{_pista(clave, TABLAS_PREREGISTRO)}"
+        for clave in prereg if clave not in TABLAS_PREREGISTRO
+    ]
+    agentes = prereg.get("agente", {})
+    if not isinstance(agentes, dict):
+        errores.append(f"{donde}: 'agente' debe ser una tabla por agente: [agente.<id>]")
+        agentes = {}
+    for identificador, declarado in agentes.items():
+        sitio = f"{donde}[agente.{identificador}]"
+        if not _nombre_valido(identificador):
+            errores.append(f"{sitio}: el id sólo admite letras, números, '.', '-' y '_' (sin '__')")
+        if not isinstance(declarado, dict):
+            errores.append(f"{sitio}: debe ser una tabla")
+            continue
+        errores.extend(validar_esquema({c: v for c, v in declarado.items() if c != "entorno"}, AGENTE, sitio))
+        entorno = declarado.get("entorno", {})
+        if not isinstance(entorno, dict) or not all(isinstance(v, str) for v in entorno.values()):
+            errores.append(f"{sitio}.entorno: debe ser una tabla de textos")
+        if plantilla:
+            continue
+        comando = declarado.get("comando", [])
+        comando = comando if isinstance(comando, list) else []
+        if not comando:
+            errores.append(f"{sitio}: 'comando' está vacío")
+        if any("{modelo}" in str(parte) for parte in comando) and not str(declarado.get("modelo", "")).strip():
+            errores.append(f"{sitio}: 'modelo' está vacío y el comando lo usa")
+    for tabla, claves in PROTOCOLO.items():
+        valores = prereg.get(tabla, {})
+        sitio = f"{donde}[{tabla}]"
+        if not isinstance(valores, dict):
+            errores.append(f"{sitio}: debe ser una tabla")
+            continue
+        for clave, valor in valores.items():
+            if clave not in claves:
+                errores.append(f"{sitio}: clave desconocida '{clave}'{_pista(clave, claves)}")
+            elif isinstance(valor, bool) or not isinstance(valor, claves[clave]):
+                esperado = " o ".join(t.__name__ for t in claves[clave])
+                errores.append(f"{sitio}.{clave}: debe ser {esperado}, es {type(valor).__name__}")
+            elif isinstance(valor, list) and not all(isinstance(v, str) for v in valor):
+                errores.append(f"{sitio}.{clave}: la lista sólo admite texto")
+    ejecucion, decision = prereg.get("ejecucion", {}), prereg.get("decision", {})
+    limite = ejecucion.get("limite_minutos", 1) if isinstance(ejecucion, dict) else 1
+    if isinstance(limite, (int, float)) and not isinstance(limite, bool) and limite <= 0:
+        errores.append(f"{donde}[ejecucion].limite_minutos: debe ser mayor que 0")
+    alfa = decision.get("alfa", 0.05) if isinstance(decision, dict) else 0.05
+    if isinstance(alfa, float) and not 0 < alfa < 1:
+        errores.append(f"{donde}[decision].alfa: debe estar entre 0 y 1")
+    muestras = decision.get("muestras", 1000) if isinstance(decision, dict) else 1000
+    if isinstance(muestras, int) and not isinstance(muestras, bool) and muestras < 1000:
+        errores.append(f"{donde}[decision].muestras: debe ser al menos 1000")
     return errores
 
 
@@ -97,16 +181,30 @@ def validar_proyecto(directorio: Path) -> list[str]:
                 errores.append(f"{manifiesto}: '{clave}' está vacío")
     prereg = directorio / "preregistro.toml"
     if prereg.exists():
-        tareas = tomllib.loads(prereg.read_text(encoding="utf-8")).get("tarea", [])
+        contenido = tomllib.loads(prereg.read_text(encoding="utf-8"))
+        errores.extend(validar_protocolo(contenido, str(prereg), plantilla))
+        tareas = contenido.get("tarea", [])
         ids: list[str] = []
         for n, tarea in enumerate(tareas, 1):
             donde = f"{prereg}[tarea {n}]"
-            errores.extend(validar_esquema(tarea, TAREA, donde))
+            errores.extend(validar_esquema({c: v for c, v in tarea.items() if c != "tests_ocultos"}, TAREA, donde))
             ids.append(str(tarea.get("id", "")))
-            if plantilla:
-                continue
+            ocultos = tarea.get("tests_ocultos")
+            if ocultos is not None and (not isinstance(ocultos, str) or not (directorio / ocultos).is_file()):
+                errores.append(f"{donde}: 'tests_ocultos' debe ser la ruta, relativa al proyecto, de un archivo que existe")
+            decisivas_tarea = tarea.get("reglas_decisivas", [])
+            if isinstance(decisivas_tarea, list) and OCULTOS in decisivas_tarea and ocultos is None:
+                errores.append(f"{donde}: la regla decisiva {OCULTOS} necesita 'tests_ocultos'")
             agentes = tarea.get("agentes", [])
             agentes = agentes if isinstance(agentes, list) else []
+            estrategias = tarea.get("estrategias", [])
+            nombres = [tarea.get("id"), *agentes, *(estrategias if isinstance(estrategias, list) else [])]
+            errores.extend(
+                f"{donde}: '{nombre}' no sirve como nombre: sólo letras, números, '.', '-' y '_' (sin '__')"
+                for nombre in nombres if not _nombre_valido(nombre)
+            )
+            if plantilla:
+                continue
             if len(set(agentes)) < 2:
                 errores.append(f"{donde}: hacen falta al menos dos agentes distintos")
             if not str(tarea.get("enunciado", "")).strip():
@@ -119,7 +217,7 @@ def validar_proyecto(directorio: Path) -> list[str]:
             decisivas = tarea.get("reglas_decisivas", [])
             errores.extend(
                 f"{donde}: regla decisiva desconocida: {r}"
-                for r in (decisivas if isinstance(decisivas, list) else []) if r not in conocidos
+                for r in (decisivas if isinstance(decisivas, list) else []) if r not in conocidos | {OCULTOS}
             )
         if len(ids) != len(set(ids)):
             errores.append(f"{prereg}: ids de tarea repetidos")

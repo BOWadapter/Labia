@@ -29,12 +29,28 @@ python -m estudios.contexto_2607_27250 ../cfa/data/experiment_full.db
 
 La tabla vigente es el artefacto `estado` del último CI en `main`.
 
+## Medir dos agentes en un proyecto
+
+```bash
+python -m estudios.corrida probar proyectos/NNN-nombre AGENTE   # ¿arranca, edita y lee sus reglas?
+python -m estudios.corrida piloto proyectos/NNN-nombre AGENTE   # una corrida de ensayo, sin registrar
+python -m estudios.corrida correr proyectos/NNN-nombre          # la batería pre-registrada
+python -m estudios.corrida ocultos proyectos/NNN-nombre         # ¿cada test oculto falla sin hacer la tarea?
+python -m estudios.decision proyectos/NNN-nombre                # qué agente indica, o que no los distingue
+```
+
+`estudios.corrida` no rutea ni coordina agentes: lanza el CLI de cada uno tal como lo
+declara el pre-registro, una corrida a la vez sobre un clon limpio, para que la recolección
+sea la misma para todos. La regla de decisión se pone a prueba contra corridas públicas
+con `python -m estudios.potencia`: cuánto declara cuando no hay diferencia y cuánto cuando
+sí.
+
 ## Estructura
 
 | Ruta | Qué es |
 |---|---|
 | `verificador/` | reglas como módulos con casos; CLI; sólo biblioteca estándar |
-| `estudios/` | tablas con intervalos, estudios sobre corridas públicas, validador de manifiestos |
+| `estudios/` | tablas con intervalos, corredor de baterías pre-registradas, regla de decisión con su control negativo, estudios sobre corridas públicas, validador de manifiestos |
 | `proyectos/` | manifiestos de proyectos y su pre-registro; `_plantilla/` para empezar |
 | `corridas/` | diffs de agentes enviados por la comunidad, re-verificados por el CI |
 | `scripts/` | arranque reproducible en cualquier máquina |
