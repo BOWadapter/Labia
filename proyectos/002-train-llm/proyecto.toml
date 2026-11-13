@@ -1,0 +1,19 @@
+# 002 — tareas sobre un repositorio ajeno con convenciones declaradas.
+# 001 queda reservado para iot-vision (THEORETICAL); los números no se reutilizan.
+
+nombre = "002-train-llm"
+tipo = "python"
+repositorio = "https://github.com/FareedKhan-dev/train-llm-from-scratch"
+commit = "bdd480a518094ca834e05ab32131dc126b522d3d"
+
+[rebanada]
+descripcion = "Tres tareas de tamaño PR sobre un repo MIT con convenciones declaradas en su CONTRIBUTING y ~170 tests en CPU"
+comando_demo = ""
+comando_eval = "python -m pytest -q -m \"not slow\""
+
+[reglas]
+directorio = "reglas"
+# Sus convenciones, no las de LabIA: tipar lo nuevo (R1), probar lo que cambia (R7 en
+# modo diff) e hiperparámetro = campo + clave JSON (P2). No aplican R2 (docstrings en
+# español), R3, R4, R5 ni R7 en modo directorio: organiza sus tests por funcionalidad.
+aplica = ["R1", "R7", "P2"]

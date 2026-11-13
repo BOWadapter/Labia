@@ -41,7 +41,11 @@ def comprobar_casos(regla: Regla) -> list[str]:
     if not any(not c.viola for c in regla.casos):
         errores.append(f"{regla.id}: falta un caso que cumpla")
     for caso in regla.casos:
-        resultado = regla.evaluar(fuente_memoria(caso.archivos, caso.stdout, caso.commits))
+        fuente = (
+            fuente_diff(caso.diff) if caso.diff is not None
+            else fuente_memoria(caso.archivos, caso.stdout, caso.commits)
+        )
+        resultado = regla.evaluar(fuente)
         medida = resultado.violaciones if regla.mecanica else resultado.oportunidades
         if regla.mecanica and not resultado.verificable:
             errores.append(f"{regla.id}: '{caso.descripcion}' no fue verificable")

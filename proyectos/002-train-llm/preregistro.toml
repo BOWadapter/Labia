@@ -1,0 +1,124 @@
+# Pre-registro de 002-train-llm. Se commitea ANTES de cualquier corrida; después no se toca
+# (python -m estudios.manifiestos lo comprueba contra el historial de git).
+#
+# Protocolo. Lo ejecuta `python -m estudios.corrida correr proyectos/002-train-llm`.
+# - Repo de partida: el del manifiesto, en su commit fijo, clon limpio para cada corrida.
+# - Una sola estrategia, always_on: proyectos/002-train-llm/AGENTS.md se copia a la raíz con
+#   el nombre que cada agente lee (`contexto`). §9 pregunta a qué agente asignar con las
+#   reglas entregadas; comparar entregas duplicaría las corridas sin acercar esa respuesta.
+#   CONTRIBUTING.md del repo queda como está.
+# - Los dos agentes sólo leen y editan archivos, sin terminal ni red: no pueden correr los
+#   tests del repo. Se mide lo que escriben con las reglas a la vista, sin ciclo de
+#   verificación.
+# - El enunciado va idéntico a los dos, en inglés como el repo, y no menciona convenciones
+#   ni tests: hacerlo filtraría el tratamiento.
+# - Una corrida = el `git diff` final contra lo que recibió el agente, guardado en
+#   corridas/002-train-llm/<id>/<agente>__always_on__<n>.diff
+# - Regla decisiva: OCULTOS. Cada diff se aplica a un clon limpio, se le añade el archivo
+#   `tests_ocultos` de su tarea (el agente nunca lo ve) y se corre con pytest: pasa o falla.
+#   El enunciado nombra la interfaz que esos tests usan, no los tests.
+#   En el piloto los dos agentes cumplieron R1 al 100% con las reglas a la vista: R1, R7 y
+#   P2 se reportan sin entrar en el veredicto.
+#
+# Falta una cosa, y la escribe la persona responsable antes de correr nada:
+#   `asignacion_sin_medir` de cada tarea: a qué agente se la darías hoy, sin medir.
+# Mientras falten, el CI queda en rojo a propósito.
+
+[[tarea]]
+id = "t1-label-smoothing"
+enunciado = """Add label smoothing to supervised fine-tuning (SFT). `SFTConfig` in \
+`config/post_training_config.py` gets a `label_smoothing` field (a float, default 0.0); a value \
+outside 0 <= value < 1 must raise `ConfigError` when the config is created, which also covers \
+loading it from JSON. `sft_loss` in `src/post_training/sft.py` takes a keyword argument \
+`label_smoothing: float = 0.0` and applies it to the masked cross-entropy the way the \
+`label_smoothing` argument of `torch.nn.functional.cross_entropy` does. `scripts/train_sft.py` \
+passes the configured value to every `sft_loss` call."""
+agentes = ["claude_code", "opencode"]
+estrategias = ["always_on"]
+repeticiones = 5
+asignacion_sin_medir = ""
+reglas_decisivas = ["OCULTOS"]
+tests_ocultos = "ocultos/test_t1_label_smoothing.py"
+
+[[tarea]]
+id = "t2-repetition-penalty"
+enunciado = """Add a CTRL-style repetition penalty to text generation. Add \
+`apply_repetition_penalty(logits, context, penalty)` to `src/inference/sampling.py`: `logits` is a \
+float tensor of shape (batch, vocab) and `context` an integer tensor of shape (batch, seq) with the \
+token ids seen so far. For every token id present in a row's context (once, however many times it \
+appears), a positive logit is divided by `penalty` and a negative one is multiplied by it; the other \
+logits are unchanged and the input tensor is not modified in place. `penalty` must be > 0 (raise \
+`ValueError` otherwise), and 1.0 leaves the logits unchanged. `generate_with_logprobs` \
+(`src/post_training/rollout.py`), `batched_generate` (`src/post_training/evaluation.py`) and \
+`generate_reply` (`src/post_training/inference.py`) take a keyword argument \
+`repetition_penalty: float = 1.0` and apply it to the logits used for sampling at every step, over \
+the prompt plus the tokens generated so far. Expose it in `scripts/chat.py` as \
+`--repetition_penalty` (a float, default 1.0)."""
+agentes = ["claude_code", "opencode"]
+estrategias = ["always_on"]
+repeticiones = 5
+asignacion_sin_medir = ""
+reglas_decisivas = ["OCULTOS"]
+tests_ocultos = "ocultos/test_t2_repetition_penalty.py"
+
+[[tarea]]
+id = "t3-inverse-sqrt"
+enunciado = """Add an `inverse_sqrt` learning-rate schedule. In `src/optim/schedules.py` add \
+`inverse_sqrt_lr(step, *, warmup_steps, max_steps, lr, min_lr)`, with the same signature as the \
+other schedules: the same linear warmup to `lr` over the first `warmup_steps` steps, then \
+`lr * sqrt(max(1, warmup_steps) / max(1, step))`, never below `min_lr` (`max_steps` is accepted \
+and ignored). Make `"inverse_sqrt"` selectable everywhere the existing schedules (`cosine`, `wsd`, \
+`linear`) are: `lr_at`, both `Schedule` types, the `lr_schedule` configuration field and the \
+`--lr_schedule` option of `scripts/pretrain_base.py`; export the function from `src.optim` like \
+the others."""
+agentes = ["claude_code", "opencode"]
+estrategias = ["always_on"]
+repeticiones = 5
+asignacion_sin_medir = ""
+reglas_decisivas = ["OCULTOS"]
+tests_ocultos = "ocultos/test_t3_inverse_sqrt.py"
+
+# Cómo se lanza cada agente. El enunciado entra por stdin. Antes de fijar este archivo,
+# `python -m estudios.corrida probar proyectos/002-train-llm AGENTE` dice si arranca, edita
+# y lee su archivo de reglas.
+[agente.claude_code]
+comando = [
+    "claude", "-p", "--output-format", "stream-json", "--verbose", "--model", "{modelo}",
+    "--tools", "Read,Edit,Write,Glob,Grep", "--permission-mode", "acceptEdits",
+    "--permission-prompts", "none", "--strict-mcp-config", "--no-session-persistence",
+]
+modelo = "sonnet"
+contexto = "CLAUDE.md"
+
+[agente.opencode]
+comando = ["opencode", "run", "--standalone", "--format", "json", "--auto", "--archived", "--model", "{modelo}"]
+modelo = "opencode/deepseek-v4.1-flash-free"
+contexto = "AGENTS.md"
+
+[agente.opencode.entorno]
+OPENCODE_DISABLE_CLAUDE_CODE = "1"
+OPENCODE_CONFIG_CONTENT = '{"permissions":[{"action":"shell","resource":"*","effect":"deny"},{"action":"webfetch","resource":"*","effect":"deny"},{"action":"websearch","resource":"*","effect":"deny"},{"action":"external_directory","resource":"*","effect":"deny"},{"action":"subagent","resource":"*","effect":"deny"},{"action":"question","resource":"*","effect":"deny"},{"action":"skill","resource":"*","effect":"deny"},{"action":"browser","resource":"*","effect":"deny"}]}'
+
+[ejecucion]
+limite_minutos = 30
+semilla = 20261204
+
+[decision]
+alfa = 0.05
+muestras = 20000
+semilla = 20261204
+
+# Entorno donde corren los tests ocultos (lo crea `estudios.corrida`, una vez). Son las
+# dependencias del repositorio a ese commit, sin instalar el repositorio: cada corrida se
+# prueba sobre su propio clon. En Windows y macOS el torch de PyPI es el de CPU.
+[ocultos]
+dependencias = ["torch>=2.3", "numpy", "h5py", "tqdm", "tiktoken", "zstandard", "requests",
+                "jaxtyping>=0.2.28", "regex", "pytest>=8", "beartype>=0.18"]
+limite_minutos = 10
+
+# Tarea de ensayo para `python -m estudios.corrida piloto`: del mismo tamaño que las
+# registradas y distinta de ellas. Nunca se registra.
+[piloto]
+enunciado = """Add stop sequences to text generation. `generate_reply` accepts `stop`, a list \
+of strings, and the returned text is cut right before the first occurrence of any of them. \
+Expose it in `scripts/chat.py` as `--stop`, which can be given more than once (default: none)."""

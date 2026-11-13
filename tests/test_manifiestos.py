@@ -32,6 +32,24 @@ repeticiones = 3
 asignacion_sin_medir = "codex"
 reglas_decisivas = ["R1", "R2"]
 """
+PROTOCOLO = """
+[agente.claude_code]
+comando = ["claude", "-p", "--model", "{modelo}"]
+modelo = "sonnet"
+contexto = "CLAUDE.md"
+
+[agente.claude_code.entorno]
+CLAVE = "valor"
+
+[ejecucion]
+limite_minutos = 20
+
+[decision]
+alfa = 0.05
+
+[piloto]
+enunciado = "Añade una opción --semilla"
+"""
 
 
 def _git(raiz: Path, *args: str) -> None:
@@ -124,3 +142,54 @@ def test_corridas_sin_preregistro_commiteado(tmp_path: Path) -> None:
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-qm", "test: corrida")
     assert any("sin pre-registro" in e for e in validar_orden(tmp_path, proyecto, tmp_path / "corridas"))
+
+
+def test_protocolo_de_ejecucion_y_decision_es_valido(tmp_path: Path) -> None:
+    """Las tablas que fijan cómo se corre y cómo se decide pasan el validador."""
+    proyecto = _repo(tmp_path)
+    (proyecto / "preregistro.toml").write_text(PREREGISTRO + PROTOCOLO, encoding="utf-8")
+    assert validar_proyecto(proyecto) == []
+
+
+def test_agente_sin_modelo_o_con_clave_mal_escrita_se_rechaza(tmp_path: Path) -> None:
+    """Un agente cuyo comando pide modelo y no lo tiene, o con una errata, no pasa en silencio."""
+    proyecto = _repo(tmp_path)
+    texto = PROTOCOLO.replace('modelo = "sonnet"', 'modelo = ""').replace("contexto =", "contesto =")
+    (proyecto / "preregistro.toml").write_text(PREREGISTRO + texto, encoding="utf-8")
+    errores = validar_proyecto(proyecto)
+    assert any("'modelo' está vacío" in e for e in errores)
+    assert any("¿quisiste decir 'contexto'?" in e for e in errores)
+
+
+def test_tabla_desconocida_y_nombres_que_no_sirven_de_ruta_se_rechazan(tmp_path: Path) -> None:
+    """Una tabla mal escrita se ignoraría al decidir; un id con '..' escribiría fuera de corridas/."""
+    proyecto = _repo(tmp_path)
+    texto = PREREGISTRO.replace('id = "t1"', 'id = "../t1"') + "\n[desicion]\nalfa = 0.05\n"
+    (proyecto / "preregistro.toml").write_text(texto, encoding="utf-8")
+    errores = validar_proyecto(proyecto)
+    assert any("¿quisiste decir 'decision'?" in e for e in errores)
+    assert any("no sirve como nombre" in e for e in errores)
+
+
+def test_valores_fuera_de_rango_en_el_protocolo_se_rechazan(tmp_path: Path) -> None:
+    """Un alfa imposible o un límite de tiempo nulo se detectan antes de correr."""
+    proyecto = _repo(tmp_path)
+    texto = PROTOCOLO.replace("alfa = 0.05", "alfa = 1.5").replace("limite_minutos = 20", "limite_minutos = 0")
+    (proyecto / "preregistro.toml").write_text(PREREGISTRO + texto, encoding="utf-8")
+    errores = validar_proyecto(proyecto)
+    assert any("alfa" in e for e in errores) and any("limite_minutos" in e for e in errores)
+
+
+def test_ocultos_como_regla_decisiva_exige_su_archivo(tmp_path: Path) -> None:
+    """OCULTOS sólo vale con un archivo de tests ocultos que exista."""
+    proyecto = _repo(tmp_path)
+    texto = PREREGISTRO.replace('reglas_decisivas = ["R1", "R2"]', 'reglas_decisivas = ["OCULTOS"]')
+    (proyecto / "preregistro.toml").write_text(texto, encoding="utf-8")
+    assert any("necesita 'tests_ocultos'" in e for e in validar_proyecto(proyecto))
+    (proyecto / "preregistro.toml").write_text(
+        texto.replace('reglas_decisivas = ["OCULTOS"]', 'reglas_decisivas = ["OCULTOS"]\ntests_ocultos = "no.py"'),
+        encoding="utf-8",
+    )
+    assert any("'tests_ocultos'" in e for e in validar_proyecto(proyecto))
+    (proyecto / "no.py").write_text("def test_x() -> None:\n    assert False\n", encoding="utf-8")
+    assert validar_proyecto(proyecto) == []

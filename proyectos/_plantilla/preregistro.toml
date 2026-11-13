@@ -1,11 +1,47 @@
 # Pre-registro: se commitea ANTES de despachar la tarea a cualquier agente.
 # El resultado se compara contra este commit (§9 del Prompt Maestro), no contra la memoria.
+# Todo el archivo queda congelado con la primera corrida: tareas, agentes y regla de decisión.
 
 [[tarea]]
 id = "t1"
 enunciado = ""               # la tarea tal como la recibirá cada agente, idéntica para todos
-agentes = ["claude_code", "codex"]
-estrategias = ["none", "always_on"]
+agentes = ["claude_code", "opencode"]
+estrategias = ["none", "always_on"]  # none: sin archivo de reglas; always_on: el AGENTS.md del proyecto
 repeticiones = 3
-asignacion_sin_medir = ""    # a qué agente se la darías hoy, sin la tabla
+asignacion_sin_medir = ""    # a qué agente se la darías hoy, sin medir
 reglas_decisivas = ["R1", "R2", "R7"]  # las que decidirían el cambio de asignación
+
+# Cómo lanza cada agente `python -m estudios.corrida`. El enunciado entra por stdin.
+# Los dos quedan limitados a leer y editar archivos, sin terminal ni red: así las corridas
+# son comparables y se pueden lanzar en la máquina de cualquiera. Antes de fijar el
+# pre-registro, `python -m estudios.corrida probar PROYECTO AGENTE` dice si cada uno
+# arranca, edita y lee su archivo de reglas.
+[agente.claude_code]
+comando = [
+    "claude", "-p", "--output-format", "stream-json", "--verbose", "--model", "{modelo}",
+    "--tools", "Read,Edit,Write,Glob,Grep", "--permission-mode", "acceptEdits",
+    "--permission-prompts", "none", "--strict-mcp-config", "--no-session-persistence",
+]
+modelo = "sonnet"
+contexto = "CLAUDE.md"       # nombre con el que este agente lee el archivo de reglas
+
+[agente.opencode]
+comando = ["opencode", "run", "--standalone", "--format", "json", "--auto", "--archived", "--model", "{modelo}"]
+modelo = ""                  # proveedor/modelo, tal como lo lista `opencode models`
+contexto = "AGENTS.md"
+
+[agente.opencode.entorno]
+OPENCODE_DISABLE_CLAUDE_CODE = "1"
+OPENCODE_CONFIG_CONTENT = '{"permissions":[{"action":"shell","resource":"*","effect":"deny"},{"action":"webfetch","resource":"*","effect":"deny"},{"action":"websearch","resource":"*","effect":"deny"},{"action":"external_directory","resource":"*","effect":"deny"},{"action":"subagent","resource":"*","effect":"deny"},{"action":"question","resource":"*","effect":"deny"},{"action":"skill","resource":"*","effect":"deny"},{"action":"browser","resource":"*","effect":"deny"}]}'
+
+[ejecucion]
+limite_minutos = 30          # por corrida; agotarlo se registra, marcado
+semilla = 20261204           # orden al azar de las corridas
+
+[decision]                   # la aplica `python -m estudios.decision` cuando están todas las corridas
+alfa = 0.05
+muestras = 20000             # repartos muestreados si no se pueden enumerar todos
+semilla = 20261204
+
+[piloto]
+enunciado = ""               # tarea de ensayo, distinta de las registradas; nunca se registra

@@ -27,8 +27,8 @@ def _orden(regla: Regla) -> tuple[str, int, str]:
     return (prefijo, int(numero.group(1)) if numero else 0, regla.id)
 
 
-def _de_directorio(directorio: Path) -> list[Regla]:
-    """Carga reglas desde archivos .py de un directorio de proyecto."""
+def de_directorio(directorio: Path) -> list[Regla]:
+    """Carga sólo las reglas de un directorio de proyecto (archivos .py con ``REGLA``)."""
     reglas: list[Regla] = []
     for archivo in sorted(directorio.glob("*.py")):
         if archivo.name.startswith("_"):
@@ -53,7 +53,7 @@ def cargar(tipo: str | None = None, extra: Path | None = None) -> tuple[Regla, .
         if isinstance(regla, Regla):
             reglas.append(regla)
     if extra is not None:
-        reglas.extend(_de_directorio(extra))
+        reglas.extend(de_directorio(extra))
     reglas = [r for r in reglas if tipo is None or r.tipo in (tipo, "cualquiera")]
     ids = [r.id for r in reglas]
     repetidos = sorted({i for i in ids if ids.count(i) > 1})
